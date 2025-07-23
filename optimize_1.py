@@ -3,7 +3,7 @@ import pandas as pd
 import calendar
 from datetime import datetime, timedelta
 from config import (
-    REQ_SHIFT_PATH, TEMPLATE_PATH, TEMP_SHIFT_1_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, HOLIDAY_MAP, INPUT_CSV, NURSES, HOLIDAY_NO_WORKERS, HOLIDAY_WORKERS, 
+    TEMP_SHIFT_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, HOLIDAY_MAP, INPUT_CSV, NURSES, HOLIDAY_NO_WORKERS
 )
 
 start_date = datetime(YEAR, MONTH - 1, 21)
@@ -126,7 +126,7 @@ if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         result.append([n] + row)
     columns = ['nurse'] + [f'day_{i}' for i in range(DAYS_IN_MONTH)]
     df = pd.DataFrame(result, columns=columns)
-    df.to_csv(TEMP_SHIFT_1_PATH, index=False, encoding='utf-8-sig')
-    print(f"✅ シフトCSVを {TEMP_SHIFT_1_PATH} に保存しました。")
+    df.to_csv(TEMP_SHIFT_PATH, index=False, encoding='utf-8-sig')
+    print(f"✅ シフトCSVを {TEMP_SHIFT_PATH} に保存しました。")
 else:
     print("❌ 解が見つかりませんでした。")
