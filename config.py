@@ -1,0 +1,32 @@
+from datetime import datetime, timedelta
+import calendar
+import pandas as pd
+
+# 初期設定
+REQ_SHIFT_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/req_shift.csv'
+TEMPLATE_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/shift_template.xlsx'
+TEMP_SHIFT_1_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/nurse-scheduling/temp_shift_1.csv'
+
+YEAR = 2025
+MONTH = 8
+DAYS_IN_MONTH = 31
+SHIFT_TYPES = [
+    '休', '夜', '早', '残', '〇', '1', '2', '3', '4', '×',
+    '/訪', 'CT', '早日', '残日', '1/', '2/', '3/', '4/', '/休', '休/'
+]
+HOLIDAY_MAP = {
+    '①': ['休'],
+    '②': ['休', '×'],
+    '③': ['休/'],
+    '④': ['/休'],
+    '⑤': ['/休', '×'],
+}
+
+INPUT_CSV = pd.read_csv(REQ_SHIFT_PATH)
+NURSES = [n for n in INPUT_CSV['日付'].dropna().tolist() if n != '曜日']
+HOLIDAY_NO_WORKERS = ['久保', '小嶋', '久保（千）', '田浦']
+HOLIDAY_WORKERS = [n for n in NURSES if n not in HOLIDAY_NO_WORKERS]
+
+start_date = datetime(YEAR, MONTH - 1, 21)
+dates = [start_date + timedelta(days=i) for i in range(DAYS_IN_MONTH)]
+weekday_list = [calendar.day_name[d.weekday()] for d in dates]
