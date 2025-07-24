@@ -3,16 +3,17 @@ import calendar
 import pandas as pd
 
 # 初期設定
-REQ_SHIFT_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/nurse-scheduling/req_shift_8.csv'
-TEMPLATE_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/shift_template.xlsx'
-TEMP_SHIFT_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/nurse-scheduling/temp_shift.csv'
+REQ_SHIFT_PATH = 'req_shift_8.csv'
+TEMPLATE_PATH = 'shift_template.xlsx'
+TEMP_SHIFT_PATH = 'temp_shift.csv'
 
 YEAR = 2025
 MONTH = 8
 DAYS_IN_MONTH = 31
 SHIFT_TYPES = [
     '休', '夜', '早', '残', '〇', '1', '2', '3', '4', '×',
-    '/訪', 'CT', '早日', '残日', '1/', '2/', '3/', '4/', '/休', '休/'
+    '/訪', 'CT', '早日', '残日', '1/', '2/', '3/', '4/', '/休', '休/',
+    'F', '2・CT'
 ]
 HOLIDAY_MAP = {
     '①': ['休'],

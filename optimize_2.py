@@ -51,6 +51,7 @@ rest_shifts_priority = ['休', '休/', '/休']
 
 # シフトタイプリスト
 all_shifts = SHIFT_TYPES
+constrained_shifts = [s for s in all_shifts if s != 'F']
 
 # 変数定義: x[n,d,s] = 1 if nurse n works shift s on day d, else 0
 x = {}
@@ -86,7 +87,6 @@ for d_idx, d in enumerate(date_cols):
             '早': 1,
             '残': 1,
             '〇': 1,
-            'F': 0,
             '休': 0,
             '休/': 0,
             '/休': 0,
@@ -105,7 +105,6 @@ for d_idx, d in enumerate(date_cols):
         shift_requirements[d] = {
             '早日': 1,
             '残日': 1,
-            'F': 0,
             '休': 0,
             '休/': 0,
             '/休': 0,
@@ -130,7 +129,6 @@ for d_idx, d in enumerate(date_cols):
         # C日程
         shift_requirements[d] = {
             '2/': 1,
-            'F': 0,
             '休': 0,
             '休/': 0,
             '/休': 0,
@@ -153,8 +151,8 @@ for d_idx, d in enumerate(date_cols):
             '/訪': 0,
         }
     else:
-        # その他は0に設定
-        shift_requirements[d] = {s: 0 for s in all_shifts}
+        # その他は0に設定（Fは除外）
+        shift_requirements[d] = {s: 0 for s in constrained_shifts}
 
 # 看護師の特性制約
 for n in nurse_names:
@@ -174,8 +172,6 @@ for n in nurse_names:
 # A/B/C日程ごとの割当ルールを厳密に制御
 # A日程（Mon, Tue, Wed, Fri）8人の日想定
 a_schedule_days = [d for d_idx, d in enumerate(date_cols) if weekday_list[d_idx] in ['Monday', 'Tuesday', 'Wednesday', 'Friday']]
-# 土曜担当メンバーリスト
-sat_staff = 土曜担当
 # A日程の優先割当グループ
 priority_group = ['小嶋', '久保（千）', '田浦']
 outpatient_shifts_a = ['1', '2', '3', '4', 'CT']
@@ -184,14 +180,14 @@ excluded_for_4 = ['御書', '三好']
 
 # 久保のCT割当補助関数
 def get_ct_assignee(d):
-    # まず久保が出勤していてロックされていなければ久保
-    if ('久保', d) not in locked_shifts or locked_shifts.get(('久保', d)) in ['CT', '2・CT']:
+    # まず久保が出勤可能なら久保
+    if locked_shifts.get(('久保', d)) in [None, 'CT', '2・CT']:
         return '久保'
     # 次に三好
-    if ('三好', d) not in locked_shifts or locked_shifts.get(('三好', d)) in ['CT', '2・CT']:
+    if locked_shifts.get(('三好', d)) in [None, 'CT', '2・CT']:
         return '三好'
     # 次に前野
-    if ('前野', d) not in locked_shifts or locked_shifts.get(('前野', d)) in ['CT', '2・CT']:
+    if locked_shifts.get(('前野', d)) in [None, 'CT', '2・CT']:
         return '前野'
     return None
 
@@ -218,18 +214,7 @@ for d in a_schedule_days:
                 model.Add(x[(n, d, 'CT')] == 0)
 
     # 優先グループは1〜4に優先的に割当
-    for s in ['1', '2', '3', '4']:
-        for n in nurse_names:
-            if (n, d) in locked_shifts:
-                continue
-            if (n, d, s) in x:
-                if n in priority_group:
-                    # 優先グループは1〜4の割当可能
-                    pass
-                else:
-                    # 優先グループ以外は1〜4の割当を制限するが一部は月1回程度許容（後述）
-                    # ここでは一旦制限
-                    model.Add(x[(n, d, s)] == 0)
+    # 現状はハード制約を設けず、ソフト制約で調整する
 
     # '4'は御書、三好除外
     for n in ['御書', '三好']:
@@ -286,15 +271,31 @@ for d in b_schedule_days:
 # C日程（土曜）
 c_schedule_days = [d for d_idx, d in enumerate(date_cols) if weekday_list[d_idx] == 'Saturday']
 for d in c_schedule_days:
-    # 久保は2/に割当優先
-    for n in nurse_names:
-        if (n, d) in locked_shifts:
-            continue
-        if (n, d, '2/') in x:
-            if n == '久保':
-                model.Add(x[(n, d, '2/')] == 1)
-            else:
-                model.Add(x[(n, d, '2/')] == 0)
+    # 久保が出勤可能なら2/を固定
+    kubo_locked = locked_shifts.get(('久保', d))
+    if kubo_locked is None or kubo_locked == '2/':
+        for n in nurse_names:
+            if (n, d) in locked_shifts:
+                continue
+            if (n, d, '2/') in x:
+                if n == '久保':
+                    model.Add(x[(n, d, '2/')] == 1)
+                else:
+                    model.Add(x[(n, d, '2/')] == 0)
+    else:
+        # 久保が休みの場合、他メンバーで担当
+        substitutes = ['小嶋', '久保（千）', '田浦']
+        vars_sub = []
+        for n in nurse_names:
+            if (n, d) in locked_shifts:
+                continue
+            if (n, d, '2/') in x:
+                if n in substitutes:
+                    vars_sub.append(x[(n, d, '2/')])
+                else:
+                    model.Add(x[(n, d, '2/')] == 0)
+        if vars_sub:
+            model.Add(sum(vars_sub) == 1)
     # その他シフトは0に設定（Fや休は許可）
     for s in all_shifts:
         if s not in ['2/', 'F', '休', '休/', '/休', '×']:
@@ -306,7 +307,7 @@ for d in c_schedule_days:
 
 # 各日、各シフトで必要人数を満たす
 for d in date_cols:
-    for s in all_shifts:
+    for s in constrained_shifts:
         required = shift_requirements[d].get(s, 0)
         # ロックされたシフトを考慮：この日のこのシフトに既に割り当てられている数をカウント
         locked_count = sum(1 for n in nurse_names if locked_shifts.get((n, d), None) == s)
@@ -314,11 +315,7 @@ for d in date_cols:
         if effective_required < 0:
             effective_required = 0
         vars_for_shift = [x[(n, d, s)] for n in nurse_names if (n, d) not in locked_shifts and (n, d, s) in x]
-        if effective_required > 0:
-            model.Add(sum(vars_for_shift) >= effective_required)
-        else:
-            if vars_for_shift:
-                model.Add(sum(vars_for_shift) == 0)
+        model.Add(sum(vars_for_shift) == effective_required)
 
 # 看護師の外来シフト（1-4）割当は月1回程度の制限（soft constraint対象）
 # ここではハード制約は設けず、soft constraintで調整
