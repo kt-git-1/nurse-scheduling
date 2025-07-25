@@ -326,7 +326,7 @@ def run():
             if effective_required < 0:
                 effective_required = 0
             vars_for_shift = [x[(n, d, s)] for n in nurse_names if (n, d) not in locked_shifts and (n, d, s) in x]
-            model.Add(sum(vars_for_shift) == effective_required)
+            model.Add(sum(vars_for_shift) >= effective_required)
     
     # 看護師の外来シフト（1-4）割当は月1回程度の制限（soft constraint対象）
     # ここではハード制約は設けず、soft constraintで調整
@@ -446,6 +446,7 @@ def run():
     )
     
     solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 30
     status = solver.Solve(model)
     
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
@@ -488,8 +489,10 @@ def run():
         df_with_rest_col['休み合計'] = rest_col
         df_with_rest_col.to_csv("shift_final_summary.csv", encoding="utf-8-sig")
         print("✅ 休み合計列付きのシフトCSVを shift_final_summary.csv に保存しました。")
+        return df_with_rest_col
     else:
         print("⚠️ 最適解が見つかりませんでした。")
+        return None
 
 if __name__ == "__main__":
     run()
