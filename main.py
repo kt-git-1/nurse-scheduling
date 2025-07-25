@@ -1,7 +1,8 @@
-import subprocess
-import sys
 import pandas as pd
 from openpyxl import load_workbook
+
+import optimize_1
+import optimize_2
 
 TEMP_SHIFT_PATH = "temp_shift_final.csv"
 TEMPLATE_PATH = "shift_template.xlsx"
@@ -9,17 +10,15 @@ OUTPUT_PATH = "shift_output.xlsx"
 
 # 1. optimize_1.py を実行して temp_shift_output_1.csv を生成
 print("=== Step 1: Strict1~3の最適化 ===")
-ret1 = subprocess.run([sys.executable, "optimize_1.py"])
-if ret1.returncode != 0:
-    print("optimize_1.py の実行に失敗しました")
-    sys.exit(1)
+df1 = optimize_1.run()
+if df1 is None:
+    raise RuntimeError("optimize_1 failed")
 
 # 2. optimize_2.py を実行して、temp_shift_output_1.csv を使って次の最適化
 print("=== Step 2: 追加最適化 ===")
-ret2 = subprocess.run([sys.executable, "optimize_2.py"])
-if ret2.returncode != 0:
-    print("optimize_2.py の実行に失敗しました")
-    sys.exit(1)
+df2 = optimize_2.run()
+if df2 is None:
+    raise RuntimeError("optimize_2 failed")
 # CSV読込
 df = pd.read_csv(TEMP_SHIFT_PATH, index_col=0)
 
