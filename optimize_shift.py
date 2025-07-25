@@ -4,6 +4,7 @@ import calendar
 from datetime import datetime, timedelta
 import os
 from openpyxl import load_workbook
+import config
 
 # === 設定 ===
 YEAR = 2025
@@ -24,9 +25,9 @@ HALF_HOLIDAY_WEEKDAYS = ['土']
 }
 
 # === ファイルパス ===
-INPUT_CSV = '/Users/kaito_taniguchi/workspace/nurse-shift/kibou_input.csv'
-TEMPLATE_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/shift_template.xlsx'
-OUTPUT_PATH = '/Users/kaito_taniguchi/workspace/nurse-shift/shift_output.xlsx'
+INPUT_CSV = str(config.REQ_SHIFT_PATH)
+TEMPLATE_PATH = str(config.TEMPLATE_PATH)
+OUTPUT_PATH = 'shift_output.xlsx'
 
 # === 日付と曜日を生成 ===
 start_date = datetime(YEAR, MONTH - 1, 21)

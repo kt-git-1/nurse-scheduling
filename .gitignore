@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.xlsx
+temp_shift.csv
+temp_shift_final.csv
+shift_output.xlsx
