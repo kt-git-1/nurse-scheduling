@@ -88,7 +88,7 @@ for nurse, reqs in req_dayoff.items():
 
 
 # Strict3: 夜勤を各日に必ず1人、かつ均等に入れる
-YAKIN_WORKERS = ['樋渡', '中山', '川原田', '友枝', '奥平', '前野', '森園', '御書']
+YAKIN_WORKERS = ['樋渡', '中山', '川原田', '友枝', '奥平', '前野', '森園'] # 「御書」「三好」「久保」「三好」「前野」「田浦」は夜勤無し
 
 for d in range(DAYS_IN_MONTH):
     model.Add(sum(x[n, d, '夜'] for n in YAKIN_WORKERS) == 1)

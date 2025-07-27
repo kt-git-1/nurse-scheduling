@@ -1,5 +1,6 @@
 from ortools.sat.python import cp_model
 import pandas as pd
+import random
 import calendar
 from datetime import datetime, timedelta
 from config import (
@@ -109,45 +110,68 @@ for d, col in enumerate(date_cols):
                     shift_counts_weekday[assign]['2・CT'] += 1
                     assigned_nurses.add(assign)
 
-        # 「小嶋」「久保（千）」「田浦」が「1」「3」「4」を均等に割り当てる
-        gai_shift = ['1', '3', '4']
-        gai_members = [n for n in 土曜担当 if n in available_nurses]
-        assigned_gai = set()
-        for s in gai_shift:
-            # 各シフトごとの担当数が最小の人を選ぶ
-            if gai_members:
-                count_dict = {n: shift_counts_weekday[n][s] for n in gai_members if n not in assigned_gai}
-                if count_dict:
-                    min_count = min(count_dict.values())
-                    candidates = [n for n, c in count_dict.items() if c == min_count]
-                    assign = sorted(candidates)[0]  # 複数候補がいる場合は名前順で決定
-                    df.at[assign, col] = s
-                    shift_counts_weekday[assign][s] += 1
-                    assigned_nurses.add(assign)
-                    assigned_gai.add(assign)
-
-        # 残り外来枠（1,3,4）を他から均等割り
-        remain = 3 - len(gai_members)
-        if remain > 0:
-            other_candidates = [n for n in available_nurses if n not in assigned_nurses]
-            for s in gai_shift[len(gai_members):]:
-                if other_candidates:
-                    min_count = min(shift_counts_weekday[n][s] for n in other_candidates)
-                    assign = min([n for n in other_candidates if shift_counts_weekday[n][s] == min_count])
-                    df.at[assign, col] = s
-                    shift_counts_weekday[assign][s] += 1
-                    assigned_nurses.add(assign)
-                    other_candidates.remove(assign)
-
-        # 「2」割り当て（8人時のみ）
+        # 8人以上割り当てれる時
+        # 「小嶋」「久保（千）」「田浦」が「1」「2」「3」「4」を均等に割り当てる
         if n_to_assign == 8:
-            remain_candidates = [n for n in available_nurses if n not in assigned_nurses]
-            if remain_candidates:
-                min_count = min(shift_counts_weekday[n]['2'] for n in remain_candidates)
-                assign = min([n for n in remain_candidates if shift_counts_weekday[n]['2'] == min_count])
-                df.at[assign, col] = '2'
-                shift_counts_weekday[assign]['2'] += 1
-                assigned_nurses.add(assign)
+            gai_shift = random.sample(['1', '2', '3', '4'], k=4)
+            gai_members = [n for n in 土曜担当 if n in available_nurses]
+            assigned_gai = set()
+            for s in gai_shift:
+                # 各シフトごとの担当数が最小の人を選ぶ
+                if gai_members:
+                    count_dict = {n: shift_counts_weekday[n][s] for n in gai_members if n not in assigned_gai}
+                    if count_dict:
+                        min_count = min(count_dict.values())
+                        candidates = [n for n, c in count_dict.items() if c == min_count]
+                        assign = sorted(candidates)[0]  # 複数候補がいる場合は名前順で決定
+                        df.at[assign, col] = s
+                        shift_counts_weekday[assign][s] += 1
+                        assigned_nurses.add(assign)
+                        assigned_gai.add(assign)
+
+            # 残り外来を他から均等割り
+            remain = 4 - len(gai_members)
+            if remain > 0:
+                other_candidates = [n for n in available_nurses if n not in assigned_nurses and n != '御書'] # 御書は外来に入らない
+                for s in gai_shift[len(gai_members):]:
+                    if other_candidates:
+                        min_count = min(shift_counts_weekday[n][s] for n in other_candidates)
+                        assign = min([n for n in other_candidates if shift_counts_weekday[n][s] == min_count])
+                        df.at[assign, col] = s
+                        shift_counts_weekday[assign][s] += 1
+                        assigned_nurses.add(assign)
+                        other_candidates.remove(assign)
+
+        else: # 7人しか割り振れない時
+            gai_shift = random.sample(['1', '3', '4'], k=3)
+            gai_members = [n for n in 土曜担当 if n in available_nurses]
+            assigned_gai = set()
+            for s in gai_shift:
+                # 各シフトごとの担当数が最小の人を選ぶ
+                if gai_members:
+                    count_dict = {n: shift_counts_weekday[n][s] for n in gai_members if n not in assigned_gai}
+                    if count_dict:
+                        min_count = min(count_dict.values())
+                        candidates = [n for n, c in count_dict.items() if c == min_count]
+                        assign = sorted(candidates)[0]  # 複数候補がいる場合は名前順で決定
+                        df.at[assign, col] = s
+                        shift_counts_weekday[assign][s] += 1
+                        assigned_nurses.add(assign)
+                        assigned_gai.add(assign)
+
+            # 残り外来を他から均等割り
+            remain = 3 - len(gai_members)
+            if remain > 0:
+                other_candidates = [n for n in available_nurses if n not in assigned_nurses and n != '御書'] # 御書は外来に入らない
+                for s in gai_shift[len(gai_members):]:
+                    if other_candidates:
+                        min_count = min(shift_counts_weekday[n][s] for n in other_candidates)
+                        assign = min([n for n in other_candidates if shift_counts_weekday[n][s] == min_count])
+                        df.at[assign, col] = s
+                        shift_counts_weekday[assign][s] += 1
+                        assigned_nurses.add(assign)
+                        other_candidates.remove(assign)
+
 
         # 病棟シフト（早・残・〇）
         byoto_shifts = ['早', '残', '〇']
