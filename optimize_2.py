@@ -286,8 +286,8 @@ model.Minimize(sum(square_deviation_vars))
 for d in date_cols:
     df[d] = df[d].apply(lambda x: int(x) if x in ['1', '2', '3', '4'] else x)
 
-df.to_csv("temp_shift_final.csv", encoding="utf-8-sig")
-print("✅ シフト割り振りを実施し、temp_shift_final.csv に保存しました。")
+df.to_csv("output/shift_final.csv", encoding="utf-8-sig")
+print("✅ シフト割り振りを実施し、shift_final.csv に保存しました。")
 
 # 各看護師の休み合計数を列として追加して保存
 df_with_rest_col = df.copy()
@@ -302,5 +302,5 @@ for n in nurse_names:
             total_rest += 0.5
     rest_col.append(total_rest)
 df_with_rest_col['休み合計'] = rest_col
-df_with_rest_col.to_csv("shift_final_summary.csv", encoding="utf-8-sig")
-print("✅ 休み合計列付きのシフトCSVを shift_final_summary.csv に保存しました。")
+df_with_rest_col.to_csv("output/shift_summary.csv", encoding="utf-8-sig")
+print("✅ 休み合計列付きのシフトCSVを shift_summary.csv に保存しました。")

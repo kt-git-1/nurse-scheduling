@@ -3,9 +3,9 @@ import sys
 import pandas as pd
 from openpyxl import load_workbook
 
-TEMP_SHIFT_PATH = "temp_shift_final.csv"
 TEMPLATE_PATH = "data/shift_template.xlsx"
-OUTPUT_PATH = "shift_output.xlsx"
+TEMP_SHIFT_PATH = "output/shift_final.csv"
+OUTPUT_PATH = "output/shift_output.xlsx"
 
 # 1. optimize_1.py を実行して temp_shift_output_1.csv を生成
 print("=== Step 1: Strict1~3の最適化 ===")

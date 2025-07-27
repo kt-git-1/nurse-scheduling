@@ -4,8 +4,8 @@ import pandas as pd
 
 # 初期設定
 REQ_SHIFT_PATH = 'data/req_shift_8.csv'
-TEMPLATE_PATH = 'shift_template.xlsx'
-TEMP_SHIFT_PATH = 'data/temp_shift.csv'
+TEMPLATE_PATH = 'data/shift_template.xlsx'
+TEMP_SHIFT_PATH = 'output/temp_shift.csv'
 
 YEAR = 2025
 MONTH = 8
