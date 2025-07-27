@@ -194,20 +194,21 @@ for d, col in enumerate(date_cols):
         forbidden_shifts = ['休', '休/', '/休', '×', '夜', '/訪']
         candidates = [n for n in nurse_names if df.at[n, col] not in forbidden_shifts]
 
-        # 除外する4名（例として「久保」「三好」「前野」「田浦」など、要調整）
-        excluded_for_early_late = ['久保', '三好', '前野', '田浦']
-        candidates_for_early_late = [n for n in candidates if n not in excluded_for_early_late]
-
         # 「早日」「残日」を1人ずつ均等割当
-        early_counts = {n: (df.loc[n] == '早日').sum() for n in candidates_for_early_late}
-        late_counts = {n: (df.loc[n] == '残日').sum() for n in candidates_for_early_late}
-        candidates_early = sorted(candidates_for_early_late, key=lambda n: early_counts[n])
-        candidates_late = sorted(candidates_for_early_late, key=lambda n: late_counts[n] if n != candidates_early[0] else float('inf'))
+        early_counts = {n: (df == '早日').loc[n].sum() for n in candidates}
+        min_early = min(early_counts.values()) if early_counts else 0
+        candidates_early = [n for n in candidates if early_counts[n] == min_early]
 
         if candidates_early:
-            df.at[candidates_early[0], col] = '早日'
-        if len(candidates_late) > 1:
-            df.at[candidates_late[0], col] = '残日'
+            assign_early = sorted(candidates_early)[0]
+            df.at[assign_early, col] = '早日'
+
+        late_counts = {n: (df == '残日').loc[n].sum() for n in candidates if n != assign_early}
+        min_late = min(late_counts.values()) if late_counts else 0
+        candidates_late = [n for n in late_counts if late_counts[n] == min_late]
+        if candidates_late:
+            assign_late = sorted(candidates_late)[0]
+            df.at[assign_late, col] = '残日'
 
         # 残りの人は休み割当。ただし allowed_additional_rest に基づき「休」「休/」
         rest_candidates = [n for n in candidates if df.at[n, col] not in ['早日', '残日']]
