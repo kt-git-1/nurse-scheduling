@@ -7,6 +7,9 @@ from config import (
     TEMP_SHIFT_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, NURSES, FULL_OFF_SHIFTS, HALF_OFF_SHIFTS, TARGET_REST_SCORE
 )
 
+# 夜勤を行うメンバー（夜勤明けは必ず×とする）
+YAKIN_WORKERS = ['樋渡', '中山', '川原田', '友枝', '奥平', '前野', '森園']
+
 start_date = datetime(YEAR, MONTH - 1, 21)
 dates = [start_date + timedelta(days=i) for i in range(DAYS_IN_MONTH)]
 weekday_list = [calendar.day_name[d.weekday()] for d in dates]
@@ -91,13 +94,24 @@ def balance_rest_days():
                 total += 0.5
         totals[n] = total
 
-    while max(totals.values()) - min(totals.values()) > 1:
+    # 偏りが多少残ってもよいので差が2以上の場合のみ調整
+    while max(totals.values()) - min(totals.values()) > 2:
         high = max(totals, key=totals.get)
         low = min(totals, key=totals.get)
         moved = False
-        for col in date_cols:
+        for idx, col in enumerate(date_cols):
             high_shift = df.at[high, col]
             low_shift = df.at[low, col]
+            # 夜勤の翌日の×は動かさない
+            if (
+                high_shift == '×'
+                and idx > 0
+                and df.at[high, date_cols[idx - 1]] == '夜'
+            ):
+                continue
+            # 夜勤シフトの移動は行わない
+            if low_shift == '夜':
+                continue
             if high_shift in FULL_OFF_SHIFTS and low_shift not in FULL_OFF_SHIFTS + HALF_OFF_SHIFTS:
                 df.at[high, col], df.at[low, col] = low_shift, '休'
                 totals[high] -= 1
