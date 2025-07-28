@@ -38,9 +38,9 @@ for n in nurse_names:
     score = 0
     for d in date_cols:
         shift = df.at[n, d]
-        if shift in FULL_OFF_SHIFTS or shift == '×':
+        if shift in FULL_OFF_SHIFTS:
             score += 1
-        elif shift in HALF_OFF_SHIFTS or shift in ['休/', '/休']:
+        elif shift in HALF_OFF_SHIFTS:
             score += 0.5
     initial_rest_score[n] = score
 
