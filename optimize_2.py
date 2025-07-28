@@ -76,7 +76,6 @@ def assign_rest_shifts(nurses, col):
         elif remaining >= 1:
             df.at[n, col] = '休/'
             current_rest_score[n] += 1
-            allowed_additional_rest[n] -= 0.5
 
 
 def balance_rest_days():
