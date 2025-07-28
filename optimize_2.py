@@ -62,15 +62,25 @@ rest_shifts_priority = ['休', '休/', '/休']
 
 # 休み割当用の関数
 def assign_rest_shifts(nurses, col):
-    # 現在のスコアが低い順に並べる
-    sorted_nurses = sorted(nurses, key=lambda n: current_rest_score.get(n, 0))
+    """Assign rest shifts prioritizing nurses lacking days off."""
+    global allowed_additional_rest
+    # 差分（残り休み必要数）が多い順に並べる
+    sorted_nurses = sorted(
+        nurses, key=lambda n: allowed_additional_rest.get(n, 0), reverse=True
+    )
     for n in sorted_nurses:
-        if current_rest_score[n] + 2 <= TARGET_REST_SCORE * 2:
+        remaining = allowed_additional_rest.get(n, 0)
+        if remaining <= 0:
+            continue
+        # フル休みを優先的に付与
+        if remaining >= 1 and current_rest_score[n] + 2 <= TARGET_REST_SCORE * 2:
             df.at[n, col] = '休'
             current_rest_score[n] += 2
-        elif current_rest_score[n] + 1 <= TARGET_REST_SCORE * 2:
+            allowed_additional_rest[n] -= 1
+        elif remaining >= 0.5 and current_rest_score[n] + 1 <= TARGET_REST_SCORE * 2:
             df.at[n, col] = '休/'
             current_rest_score[n] += 1
+            allowed_additional_rest[n] -= 0.5
 
 # シフトカウント初期化（平日用）
 shift_names_weekday = ['1', '2', '3', '4', '早', '残', '〇', 'CT', '2・CT']
