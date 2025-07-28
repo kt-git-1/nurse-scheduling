@@ -42,6 +42,18 @@ allowed_additional_rest = {
     for n in nurse_names
 }
 
+# 看護師ごとの現在の休みスコア（2点満点制）を初期化
+current_rest_score = {}
+for n in nurse_names:
+    score = 0
+    for d in date_cols:
+        shift = df.at[n, d]
+        if shift in FULL_OFF_SHIFTS:
+            score += 2
+        elif shift in HALF_OFF_SHIFTS:
+            score += 1
+    current_rest_score[n] = score
+
 # 休み制御用の優先度付き休みシフトリスト
 rest_shifts_priority = ['休', '休/', '/休']
 
@@ -50,16 +62,15 @@ rest_shifts_priority = ['休', '休/', '/休']
 
 # 休み割当用の関数
 def assign_rest_shifts(nurses, col):
-    for n in nurses:
-        if allowed_additional_rest[n] >= 1:
+    # 現在のスコアが低い順に並べる
+    sorted_nurses = sorted(nurses, key=lambda n: current_rest_score.get(n, 0))
+    for n in sorted_nurses:
+        if current_rest_score[n] + 2 <= TARGET_REST_SCORE * 2:
             df.at[n, col] = '休'
-            allowed_additional_rest[n] -= 1
-        elif allowed_additional_rest[n] >= 0.5:
+            current_rest_score[n] += 2
+        elif current_rest_score[n] + 1 <= TARGET_REST_SCORE * 2:
             df.at[n, col] = '休/'
-            allowed_additional_rest[n] -= 0.5
-        else:
-            # 休み割当不可なら空白のままにする（後で他の処理で割当）
-            pass
+            current_rest_score[n] += 1
 
 # シフトカウント初期化（平日用）
 shift_names_weekday = ['1', '2', '3', '4', '早', '残', '〇', 'CT', '2・CT']
@@ -210,18 +221,9 @@ for d, col in enumerate(date_cols):
             assign_late = sorted(candidates_late)[0]
             df.at[assign_late, col] = '残日'
 
-        # 残りの人は休み割当。ただし allowed_additional_rest に基づき「休」「休/」
+        # 残りの人は休みスコアに基づき割当
         rest_candidates = [n for n in candidates if df.at[n, col] not in ['早日', '残日']]
-        for n in rest_candidates:
-            if allowed_additional_rest[n] >= 1:
-                df.at[n, col] = '休'
-                allowed_additional_rest[n] -= 1
-            elif allowed_additional_rest[n] >= 0.5:
-                df.at[n, col] = '休/'
-                allowed_additional_rest[n] -= 0.5
-            else:
-                # 休み割り当て不可なら空白のまま
-                df.at[n, col] = ''
+        assign_rest_shifts(rest_candidates, col)
 
         # 他の看護師で空白の人には休み割当優先度付きで割当
         remain_nurses = [n for n in nurse_names if (df.at[n, col] == '' or pd.isna(df.at[n, col])) and df.at[n, col] not in busy_shifts]
