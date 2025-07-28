@@ -37,10 +37,6 @@ for n in nurse_names:
             score += 0.5
     initial_rest_score[n] = score
 
-allowed_additional_rest = {
-    n: max(0, TARGET_REST_SCORE - initial_rest_score[n])
-    for n in nurse_names
-}
 
 # 看護師ごとの現在の休みスコア（2点満点制）を初期化
 current_rest_score = {}
@@ -62,25 +58,55 @@ rest_shifts_priority = ['休', '休/', '/休']
 
 # 休み割当用の関数
 def assign_rest_shifts(nurses, col):
-    """Assign rest shifts prioritizing nurses lacking days off."""
-    global allowed_additional_rest
-    # 差分（残り休み必要数）が多い順に並べる
-    sorted_nurses = sorted(
-        nurses, key=lambda n: allowed_additional_rest.get(n, 0), reverse=True
-    )
+    """Assign rest shifts prioritizing nurses still lacking days off."""
+    # 各看護師が目標休み数にどれだけ足りていないかを計算
+    need = {
+        n: TARGET_REST_SCORE * 2 - current_rest_score.get(n, 0)
+        for n in nurses
+    }
+    # 休みが不足している順に並べる
+    sorted_nurses = sorted(nurses, key=lambda n: need[n], reverse=True)
     for n in sorted_nurses:
-        remaining = allowed_additional_rest.get(n, 0)
+        remaining = need[n]
         if remaining <= 0:
             continue
-        # フル休みを優先的に付与
-        if remaining >= 1 and current_rest_score[n] + 2 <= TARGET_REST_SCORE * 2:
+        if remaining >= 2:
             df.at[n, col] = '休'
             current_rest_score[n] += 2
-            allowed_additional_rest[n] -= 1
-        elif remaining >= 0.5 and current_rest_score[n] + 1 <= TARGET_REST_SCORE * 2:
+        elif remaining >= 1:
             df.at[n, col] = '休/'
             current_rest_score[n] += 1
             allowed_additional_rest[n] -= 0.5
+
+
+def balance_rest_days():
+    """Simple post-process to even out total rest days."""
+    totals = {}
+    for n in nurse_names:
+        total = 0
+        for d in date_cols:
+            shift = df.at[n, d]
+            if shift in FULL_OFF_SHIFTS:
+                total += 1
+            elif shift in HALF_OFF_SHIFTS:
+                total += 0.5
+        totals[n] = total
+
+    while max(totals.values()) - min(totals.values()) > 1:
+        high = max(totals, key=totals.get)
+        low = min(totals, key=totals.get)
+        moved = False
+        for col in date_cols:
+            high_shift = df.at[high, col]
+            low_shift = df.at[low, col]
+            if high_shift in FULL_OFF_SHIFTS and low_shift not in FULL_OFF_SHIFTS + HALF_OFF_SHIFTS:
+                df.at[high, col], df.at[low, col] = low_shift, '休'
+                totals[high] -= 1
+                totals[low] += 1
+                moved = True
+                break
+        if not moved:
+            break
 
 # シフトカウント初期化（平日用）
 shift_names_weekday = ['1', '2', '3', '4', '早', '残', '〇', 'CT', '2・CT']
@@ -309,7 +335,7 @@ for d, col in enumerate(date_cols):
                 assigned_nurses.add(assign)
                 candidates.remove(assign)
 
-        # 休み割り振り（allowed_additional_restに基づく）
+        # 休み割り振り（休み不足が多い人から優先）
         remain_nurses = [n for n in nurse_names if (df.at[n, col] == '' or pd.isna(df.at[n, col])) and df.at[n, col] not in busy_shifts]
         assign_rest_shifts(remain_nurses, col)
 
@@ -324,6 +350,9 @@ for d, col in enumerate(date_cols):
     for n in nurse_names:
         if df.at[n, col] == '' or pd.isna(df.at[n, col]):
             df.at[n, col] = '休'
+
+balance_rest_days()
+
 
 
  # 出力前に 1〜4 を整数に変換（Excelで数値認識させるため）
