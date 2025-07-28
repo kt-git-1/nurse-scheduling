@@ -4,6 +4,7 @@ import pandas as pd
 
 # 初期設定
 REQ_SHIFT_PATH = 'data/req_shift_8.csv'
+# REQ_SHIFT_PATH = 'data/req_shift_t1.csv'
 TEMPLATE_PATH = 'data/shift_template.xlsx'
 TEMP_SHIFT_PATH = 'output/temp_shift.csv'
 

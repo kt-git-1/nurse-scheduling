@@ -232,34 +232,58 @@ for d, col in enumerate(date_cols):
         assigned_nurses = set()
         busy_shifts = ['休', '休/', '/休', '×', '夜']
 
-        # 「久保」が「2/」優先
+        # 「久保」が出勤の場合、「2/」優先
         if '久保' in nurse_names and df.at['久保', col] not in busy_shifts:
             df.at['久保', col] = '2/'
             shift_counts_saturday['久保']['2/'] += 1
             assigned_nurses.add('久保')
-        else:
-            candidates_2 = [n for n in nurse_names if n not in assigned_nurses and n not in 土曜担当 and df.at[n, col] not in busy_shifts]
-            if candidates_2:
-                min_count = min(shift_counts_saturday[n]['2/'] for n in candidates_2)
-                assign_2 = min([n for n in candidates_2 if shift_counts_saturday[n]['2/'] == min_count])
-                df.at[assign_2, col] = '2/'
-                shift_counts_saturday[assign_2]['2/'] += 1
-                assigned_nurses.add(assign_2)
+            gai_shift = random.sample(['1/', '3/', '4/'], k=3)
+            for s, nurse in zip(gai_shift, 土曜担当): # 「小嶋」「久保（千）」「田浦」から優先に外来「1/」「3/」「4/」に入る
+                if nurse in nurse_names and df.at[nurse, col] not in busy_shifts:
+                    df.at[nurse, col] = s
+                    shift_counts_saturday[nurse][s] += 1
+                    assigned_nurses.add(nurse)
+                else:
+                    candidates = [n for n in nurse_names if n not in assigned_nurses and n not in 土曜担当 and df.at[n, col] not in busy_shifts and n != '御書'] # 御書は外来に入らない
+                    if candidates:
+                        min_count = min(shift_counts_saturday[n][s] for n in candidates)
+                        assign = min([n for n in candidates if shift_counts_saturday[n][s] == min_count])
+                        df.at[assign, col] = s
+                        shift_counts_saturday[assign][s] += 1
+                        assigned_nurses.add(assign)
+            
+        # 「久保」が休みの場合
+        else: 
+            # 外来は土曜担当から優先
+            gai_shift = random.sample(['1/', '2/', '3/', '4/'], k=4)
+            for s, nurse in zip(gai_shift, 土曜担当):
+                # 「小嶋」「久保（千）」「田浦」から優先に外来「1/」「2/」「3/」「4/」に入る
+                if nurse in nurse_names and df.at[nurse, col] not in busy_shifts:
+                    df.at[nurse, col] = s
+                    shift_counts_saturday[nurse][s] += 1
+                    assigned_nurses.add(nurse)
+                else:
+                    candidates = [n for n in nurse_names if n not in assigned_nurses and n not in 土曜担当 and df.at[n, col] not in busy_shifts and n != '御書'] # 御書は外来に入らない
+                    if candidates:
+                        min_count = min(shift_counts_saturday[n][s] for n in candidates)
+                        assign = min([n for n in candidates if shift_counts_saturday[n][s] == min_count])
+                        df.at[assign, col] = s
+                        shift_counts_saturday[assign][s] += 1
+                        assigned_nurses.add(assign)
 
-        # 外来1/,3/,4/は土曜担当から優先
-        for s, nurse in zip(['1/', '3/', '4/'], 土曜担当):
-            if nurse in nurse_names and df.at[nurse, col] not in busy_shifts:
-                df.at[nurse, col] = s
-                shift_counts_saturday[nurse][s] += 1
-                assigned_nurses.add(nurse)
-            else:
-                candidates = [n for n in nurse_names if n not in assigned_nurses and n not in 土曜担当 and df.at[n, col] not in busy_shifts]
-                if candidates:
-                    min_count = min(shift_counts_saturday[n][s] for n in candidates)
-                    assign = min([n for n in candidates if shift_counts_saturday[n][s] == min_count])
-                    df.at[assign, col] = s
-                    shift_counts_saturday[assign][s] += 1
-                    assigned_nurses.add(assign)
+            # 残り外来を他から均等割り
+            gai_members = [n for n in 土曜担当 if n in assigned_nurses]
+            remain = 4 - len(gai_members)
+            if remain > 0:
+                other_candidates = [n for n in nurse_names if n not in assigned_nurses and n != '御書'] # 御書は外来に入らない
+                for s in gai_shift[len(gai_members):]:
+                    if other_candidates:
+                        min_count = min(shift_counts_saturday[n][s] for n in other_candidates)
+                        assign = min([n for n in other_candidates if shift_counts_saturday[n][s] == min_count])
+                        df.at[assign, col] = s
+                        shift_counts_saturday[assign][s] += 1
+                        assigned_nurses.add(assign)
+                        other_candidates.remove(assign)
 
         # 病棟シフト（早、残、〇）
         病棟シフト = ['早', '残', '〇']
@@ -289,23 +313,6 @@ for d, col in enumerate(date_cols):
         if df.at[n, col] == '' or pd.isna(df.at[n, col]):
             df.at[n, col] = '休'
 
-for n in nurse_names:
-    total = 0
-    for d in date_cols:
-        shift = df.at[n, d]
-        if shift in FULL_OFF_SHIFTS:
-            total += 2
-        elif shift in HALF_OFF_SHIFTS:
-            total += 1
-    model.Add(rest_score_vars[n] == total)
-    model.AddAbsEquality(deviation_vars[n], rest_score_vars[n] - TARGET_REST_SCORE * 2)
-# 休みスコア二乗誤差の最小化: sum((rest_score - 13*2)^2)
-square_deviation_vars = []
-for n in nurse_names:
-    square_dev = model.NewIntVar(0, 10000, f"square_deviation_{n}")
-    model.AddMultiplicationEquality(square_dev, [deviation_vars[n], deviation_vars[n]])
-    square_deviation_vars.append(square_dev)
-model.Minimize(sum(square_deviation_vars))
 
  # 出力前に 1〜4 を整数に変換（Excelで数値認識させるため）
 for d in date_cols:
@@ -321,9 +328,9 @@ for n in nurse_names:
     total_rest = 0
     for d in date_cols:
         shift = df.at[n, d]
-        if shift in FULL_OFF_SHIFTS or shift == '×':
+        if shift in FULL_OFF_SHIFTS:
             total_rest += 1
-        elif shift in HALF_OFF_SHIFTS or shift in ['休/', '/休']:
+        elif shift in HALF_OFF_SHIFTS:
             total_rest += 0.5
     rest_col.append(total_rest)
 df_with_rest_col['休み合計'] = rest_col
