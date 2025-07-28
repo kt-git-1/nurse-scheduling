@@ -7,11 +7,18 @@ from config import (
     TEMP_SHIFT_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, NURSES, FULL_OFF_SHIFTS, HALF_OFF_SHIFTS, TARGET_REST_SCORE
 )
 
+# 夜勤を行うメンバー（夜勤明けは必ず×とする）
+YAKIN_WORKERS = ['樋渡', '中山', '川原田', '友枝', '奥平', '前野', '森園']
+
 start_date = datetime(YEAR, MONTH - 1, 21)
 dates = [start_date + timedelta(days=i) for i in range(DAYS_IN_MONTH)]
 weekday_list = [calendar.day_name[d.weekday()] for d in dates]
 
-df = pd.read_csv(TEMP_SHIFT_PATH, index_col=0)  # temp_shift_1.csv
+# Load temp_shift produced by optimize_1.
+# We must keep the shift assignments written by optimize_1 intact.
+orig_df = pd.read_csv(TEMP_SHIFT_PATH, index_col=0)
+fixed_mask = orig_df.notna()  # True where the shift was pre-assigned
+df = orig_df.copy()
 days = [col for col in df.columns if col.startswith('day_')]
 nurse_names = df.index.tolist()
 date_cols = df.columns.tolist()
@@ -37,10 +44,6 @@ for n in nurse_names:
             score += 0.5
     initial_rest_score[n] = score
 
-allowed_additional_rest = {
-    n: max(0, TARGET_REST_SCORE - initial_rest_score[n])
-    for n in nurse_names
-}
 
 # 看護師ごとの現在の休みスコア（2点満点制）を初期化
 current_rest_score = {}
@@ -62,15 +65,69 @@ rest_shifts_priority = ['休', '休/', '/休']
 
 # 休み割当用の関数
 def assign_rest_shifts(nurses, col):
-    # 現在のスコアが低い順に並べる
-    sorted_nurses = sorted(nurses, key=lambda n: current_rest_score.get(n, 0))
+    """Assign rest shifts prioritizing nurses still lacking days off."""
+    # 各看護師が目標休み数にどれだけ足りていないかを計算
+    need = {
+        n: TARGET_REST_SCORE * 2 - current_rest_score.get(n, 0)
+        for n in nurses
+    }
+    # 休みが不足している順に並べる
+    sorted_nurses = sorted(nurses, key=lambda n: need[n], reverse=True)
     for n in sorted_nurses:
-        if current_rest_score[n] + 2 <= TARGET_REST_SCORE * 2:
+        if fixed_mask.at[n, col]:
+            continue  # don't overwrite pre-assigned shifts
+        remaining = need[n]
+        if remaining <= 0:
+            continue
+        if remaining >= 2:
             df.at[n, col] = '休'
             current_rest_score[n] += 2
-        elif current_rest_score[n] + 1 <= TARGET_REST_SCORE * 2:
+        elif remaining >= 1:
             df.at[n, col] = '休/'
             current_rest_score[n] += 1
+
+
+def balance_rest_days():
+    """Simple post-process to even out total rest days."""
+    totals = {}
+    for n in nurse_names:
+        total = 0
+        for d in date_cols:
+            shift = df.at[n, d]
+            if shift in FULL_OFF_SHIFTS:
+                total += 1
+            elif shift in HALF_OFF_SHIFTS:
+                total += 0.5
+        totals[n] = total
+
+    # 偏りが多少残ってもよいので差が2以上の場合のみ調整
+    while max(totals.values()) - min(totals.values()) > 2:
+        high = max(totals, key=totals.get)
+        low = min(totals, key=totals.get)
+        moved = False
+        for idx, col in enumerate(date_cols):
+            high_shift = df.at[high, col]
+            low_shift = df.at[low, col]
+            if fixed_mask.at[high, col] or fixed_mask.at[low, col]:
+                continue  # keep original assignments intact
+            # 夜勤の翌日の×は動かさない
+            if (
+                high_shift == '×'
+                and idx > 0
+                and df.at[high, date_cols[idx - 1]] == '夜'
+            ):
+                continue
+            # 夜勤シフトの移動は行わない
+            if low_shift == '夜':
+                continue
+            if high_shift in FULL_OFF_SHIFTS and low_shift not in FULL_OFF_SHIFTS + HALF_OFF_SHIFTS:
+                df.at[high, col], df.at[low, col] = low_shift, '休'
+                totals[high] -= 1
+                totals[low] += 1
+                moved = True
+                break
+        if not moved:
+            break
 
 # シフトカウント初期化（平日用）
 shift_names_weekday = ['1', '2', '3', '4', '早', '残', '〇', 'CT', '2・CT']
@@ -89,7 +146,7 @@ for d, col in enumerate(date_cols):
     # 2. 平日（月・火・水・金）の処理
     if weekday in ['Monday', 'Tuesday', 'Wednesday', 'Friday']:
         assigned_nurses = set()
-        available_nurses = [n for n in nurse_names if df.at[n, col] not in busy_shifts]
+        available_nurses = [n for n in nurse_names if df.at[n, col] not in busy_shifts and not fixed_mask.at[n, col]]
 
         n_to_assign = 8 if len(available_nurses) >= 8 else 7
 
@@ -143,7 +200,13 @@ for d, col in enumerate(date_cols):
             # 残り外来を他から均等割り
             remain = 4 - len(gai_members)
             if remain > 0:
-                other_candidates = [n for n in available_nurses if n not in assigned_nurses and n != '御書'] # 御書は外来に入らない
+                other_candidates = [
+                    n
+                    for n in available_nurses
+                    if n not in assigned_nurses
+                    and n != '御書'
+                    and not fixed_mask.at[n, col]
+                ]  # 御書は外来に入らない
                 for s in gai_shift[len(gai_members):]:
                     if other_candidates:
                         min_count = min(shift_counts_weekday[n][s] for n in other_candidates)
@@ -173,7 +236,13 @@ for d, col in enumerate(date_cols):
             # 残り外来を他から均等割り
             remain = 3 - len(gai_members)
             if remain > 0:
-                other_candidates = [n for n in available_nurses if n not in assigned_nurses and n != '御書'] # 御書は外来に入らない
+                other_candidates = [
+                    n
+                    for n in available_nurses
+                    if n not in assigned_nurses
+                    and n != '御書'
+                    and not fixed_mask.at[n, col]
+                ]  # 御書は外来に入らない
                 for s in gai_shift[len(gai_members):]:
                     if other_candidates:
                         min_count = min(shift_counts_weekday[n][s] for n in other_candidates)
@@ -197,13 +266,23 @@ for d, col in enumerate(date_cols):
                 remain_candidates.remove(assign)
 
         # 休み割り振り（残った人）
-        remain_nurses = [n for n in nurse_names if (df.at[n, col] == '' or pd.isna(df.at[n, col])) and n in available_nurses]
+        remain_nurses = [
+            n
+            for n in nurse_names
+            if (df.at[n, col] == '' or pd.isna(df.at[n, col]))
+            and n in available_nurses
+            and not fixed_mask.at[n, col]
+        ]
         assign_rest_shifts(remain_nurses, col)
 
     # 3. 木曜・日曜（B日程）の処理
     elif weekday in ['Thursday', 'Sunday']:
         forbidden_shifts = ['休', '休/', '/休', '×', '夜', '/訪']
-        candidates = [n for n in nurse_names if df.at[n, col] not in forbidden_shifts]
+        candidates = [
+            n
+            for n in nurse_names
+            if df.at[n, col] not in forbidden_shifts and not fixed_mask.at[n, col]
+        ]
 
         # 「早日」「残日」を1人ずつ均等割当
         early_counts = {n: (df == '早日').loc[n].sum() for n in candidates}
@@ -222,11 +301,21 @@ for d, col in enumerate(date_cols):
             df.at[assign_late, col] = '残日'
 
         # 残りの人は休みスコアに基づき割当
-        rest_candidates = [n for n in candidates if df.at[n, col] not in ['早日', '残日']]
+        rest_candidates = [
+            n
+            for n in candidates
+            if df.at[n, col] not in ['早日', '残日'] and not fixed_mask.at[n, col]
+        ]
         assign_rest_shifts(rest_candidates, col)
 
         # 他の看護師で空白の人には休み割当優先度付きで割当
-        remain_nurses = [n for n in nurse_names if (df.at[n, col] == '' or pd.isna(df.at[n, col])) and df.at[n, col] not in busy_shifts]
+        remain_nurses = [
+            n
+            for n in nurse_names
+            if (df.at[n, col] == '' or pd.isna(df.at[n, col]))
+            and df.at[n, col] not in busy_shifts
+            and not fixed_mask.at[n, col]
+        ]
         assign_rest_shifts(remain_nurses, col)
 
     # 4. 土曜（C日程）の処理
@@ -241,12 +330,20 @@ for d, col in enumerate(date_cols):
             assigned_nurses.add('久保')
             gai_shift = random.sample(['1/', '3/', '4/'], k=3)
             for s, nurse in zip(gai_shift, 土曜担当): # 「小嶋」「久保（千）」「田浦」から優先に外来「1/」「3/」「4/」に入る
-                if nurse in nurse_names and df.at[nurse, col] not in busy_shifts:
+                if nurse in nurse_names and df.at[nurse, col] not in busy_shifts and not fixed_mask.at[nurse, col]:
                     df.at[nurse, col] = s
                     shift_counts_saturday[nurse][s] += 1
                     assigned_nurses.add(nurse)
                 else:
-                    candidates = [n for n in nurse_names if n not in assigned_nurses and n not in 土曜担当 and df.at[n, col] not in busy_shifts and n != '御書'] # 御書は外来に入らない
+                    candidates = [
+                        n
+                        for n in nurse_names
+                        if n not in assigned_nurses
+                        and n not in 土曜担当
+                        and df.at[n, col] not in busy_shifts
+                        and n != '御書'
+                        and not fixed_mask.at[n, col]
+                    ]  # 御書は外来に入らない
                     if candidates:
                         min_count = min(shift_counts_saturday[n][s] for n in candidates)
                         assign = min([n for n in candidates if shift_counts_saturday[n][s] == min_count])
@@ -260,12 +357,20 @@ for d, col in enumerate(date_cols):
             gai_shift = random.sample(['1/', '2/', '3/', '4/'], k=4)
             for s, nurse in zip(gai_shift, 土曜担当):
                 # 「小嶋」「久保（千）」「田浦」から優先に外来「1/」「2/」「3/」「4/」に入る
-                if nurse in nurse_names and df.at[nurse, col] not in busy_shifts:
+                if nurse in nurse_names and df.at[nurse, col] not in busy_shifts and not fixed_mask.at[nurse, col]:
                     df.at[nurse, col] = s
                     shift_counts_saturday[nurse][s] += 1
                     assigned_nurses.add(nurse)
                 else:
-                    candidates = [n for n in nurse_names if n not in assigned_nurses and n not in 土曜担当 and df.at[n, col] not in busy_shifts and n != '御書'] # 御書は外来に入らない
+                    candidates = [
+                        n
+                        for n in nurse_names
+                        if n not in assigned_nurses
+                        and n not in 土曜担当
+                        and df.at[n, col] not in busy_shifts
+                        and n != '御書'
+                        and not fixed_mask.at[n, col]
+                    ]  # 御書は外来に入らない
                     if candidates:
                         min_count = min(shift_counts_saturday[n][s] for n in candidates)
                         assign = min([n for n in candidates if shift_counts_saturday[n][s] == min_count])
@@ -277,7 +382,13 @@ for d, col in enumerate(date_cols):
             gai_members = [n for n in 土曜担当 if n in assigned_nurses]
             remain = 4 - len(gai_members)
             if remain > 0:
-                other_candidates = [n for n in nurse_names if n not in assigned_nurses and n != '御書'] # 御書は外来に入らない
+                other_candidates = [
+                    n
+                    for n in nurse_names
+                    if n not in assigned_nurses
+                    and n != '御書'
+                    and not fixed_mask.at[n, col]
+                ]  # 御書は外来に入らない
                 for s in gai_shift[len(gai_members):]:
                     if other_candidates:
                         min_count = min(shift_counts_saturday[n][s] for n in other_candidates)
@@ -289,7 +400,13 @@ for d, col in enumerate(date_cols):
 
         # 病棟シフト（早、残、〇）
         病棟シフト = ['早', '残', '〇']
-        candidates = [n for n in nurse_names if n not in assigned_nurses and df.at[n, col] not in busy_shifts]
+        candidates = [
+            n
+            for n in nurse_names
+            if n not in assigned_nurses
+            and df.at[n, col] not in busy_shifts
+            and not fixed_mask.at[n, col]
+        ]
         for s in 病棟シフト:
             if candidates:
                 count_dict = {n: (df.loc[n] == s).sum() for n in candidates}
@@ -299,14 +416,26 @@ for d, col in enumerate(date_cols):
                 assigned_nurses.add(assign)
                 candidates.remove(assign)
 
-        # 休み割り振り（allowed_additional_restに基づく）
-        remain_nurses = [n for n in nurse_names if (df.at[n, col] == '' or pd.isna(df.at[n, col])) and df.at[n, col] not in busy_shifts]
+        # 休み割り振り（休み不足が多い人から優先）
+        remain_nurses = [
+            n
+            for n in nurse_names
+            if (df.at[n, col] == '' or pd.isna(df.at[n, col]))
+            and df.at[n, col] not in busy_shifts
+            and not fixed_mask.at[n, col]
+        ]
         assign_rest_shifts(remain_nurses, col)
 
     # その他の日は特に処理なし
     else:
         # 休み割当が必要な場合は割当
-        remain_nurses = [n for n in nurse_names if (df.at[n, col] == '' or pd.isna(df.at[n, col])) and df.at[n, col] not in busy_shifts]
+        remain_nurses = [
+            n
+            for n in nurse_names
+            if (df.at[n, col] == '' or pd.isna(df.at[n, col]))
+            and df.at[n, col] not in busy_shifts
+            and not fixed_mask.at[n, col]
+        ]
         assign_rest_shifts(remain_nurses, col)
 
 # 最終的に空白やNaNのシフトは「休」に置換（休み割当不可の人も含む）
@@ -314,6 +443,51 @@ for d, col in enumerate(date_cols):
     for n in nurse_names:
         if df.at[n, col] == '' or pd.isna(df.at[n, col]):
             df.at[n, col] = '休'
+
+balance_rest_days()
+
+
+def prevent_seven_day_streaks():
+    """Ensure nobody works 7 days in a row by inserting rest days."""
+    off_codes = FULL_OFF_SHIFTS + HALF_OFF_SHIFTS
+    for n in nurse_names:
+        streak = 0
+        for i, col in enumerate(date_cols):
+            shift = df.at[n, col]
+            if shift in off_codes:
+                streak = 0
+                continue
+
+            streak += 1
+            if streak >= 7:
+                # Try to change one of the last 7 days to a rest day
+                changed = False
+                for j in range(i, i - 7, -1):
+                    col_j = date_cols[j]
+                    shift_j = df.at[n, col_j]
+                    if fixed_mask.at[n, col_j]:
+                        continue
+                    # Do not modify night shift or the x immediately after it
+                    if shift_j == "夜":
+                        continue
+                    if (
+                        shift_j == "×"
+                        and j > 0
+                        and df.at[n, date_cols[j - 1]] == "夜"
+                    ):
+                        continue
+                    df.at[n, col_j] = "休"
+                    changed = True
+                    streak = 0
+                    break
+
+                if not changed and not fixed_mask.at[n, col] and shift != "夜":
+                    df.at[n, col] = "休"
+                    streak = 0
+
+
+prevent_seven_day_streaks()
+
 
 
  # 出力前に 1〜4 を整数に変換（Excelで数値認識させるため）
