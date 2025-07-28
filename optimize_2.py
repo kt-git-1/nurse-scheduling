@@ -447,6 +447,48 @@ for d, col in enumerate(date_cols):
 balance_rest_days()
 
 
+def prevent_seven_day_streaks():
+    """Ensure nobody works 7 days in a row by inserting rest days."""
+    off_codes = FULL_OFF_SHIFTS + HALF_OFF_SHIFTS
+    for n in nurse_names:
+        streak = 0
+        for i, col in enumerate(date_cols):
+            shift = df.at[n, col]
+            if shift in off_codes:
+                streak = 0
+                continue
+
+            streak += 1
+            if streak >= 7:
+                # Try to change one of the last 7 days to a rest day
+                changed = False
+                for j in range(i, i - 7, -1):
+                    col_j = date_cols[j]
+                    shift_j = df.at[n, col_j]
+                    if fixed_mask.at[n, col_j]:
+                        continue
+                    # Do not modify night shift or the x immediately after it
+                    if shift_j == "夜":
+                        continue
+                    if (
+                        shift_j == "×"
+                        and j > 0
+                        and df.at[n, date_cols[j - 1]] == "夜"
+                    ):
+                        continue
+                    df.at[n, col_j] = "休"
+                    changed = True
+                    streak = 0
+                    break
+
+                if not changed and not fixed_mask.at[n, col] and shift != "夜":
+                    df.at[n, col] = "休"
+                    streak = 0
+
+
+prevent_seven_day_streaks()
+
+
 
  # 出力前に 1〜4 を整数に変換（Excelで数値認識させるため）
 for d in date_cols:
