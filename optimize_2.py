@@ -131,7 +131,9 @@ def balance_rest_days():
 
 
 def ensure_min_rest_days_balanced():
-# 1. 各看護師の現在の休日日数
+    """各看護師にTARGET_REST_SCOREを満たすよう、出勤人数を考慮しながら「休」または半休を割り当てる"""
+
+    # 1. 各看護師の現在の休日日数
     rest_totals = {}
     for n in nurse_names:
         total = 0
@@ -153,12 +155,13 @@ def ensure_min_rest_days_balanced():
                 count += 1
         work_count_per_day[d] = count
 
-    # 3. 出勤余裕がある日から順に並べる（日別に休み入れやすい順）
+    # 3. 出勤余裕がある日から順に並べる
     sorted_days = sorted(date_cols, key=lambda d: work_count_per_day[d], reverse=True)
 
-    # 4. 看護師ごとに、必要休み数を満たすよう「休」を割り当てる（厳格版）
+    # 4. 看護師ごとに、必要休み数を満たすよう割り当て（半休含む）
     for n in nurse_names:
         while rest_totals[n] < TARGET_REST_SCORE:
+            inserted = False
             for d in sorted_days:
                 if fixed_mask.at[n, d]:
                     continue
@@ -166,16 +169,26 @@ def ensure_min_rest_days_balanced():
                 if shift in FULL_OFF_SHIFTS + HALF_OFF_SHIFTS:
                     continue
                 if shift != '' and not pd.isna(shift):
-                    continue  # Avoid overwriting assigned shifts
+                    continue
                 if shift == '×' and date_cols.index(d) > 0 and df.at[n, date_cols[date_cols.index(d)-1]] == '夜':
                     continue
                 if work_count_per_day[d] > 7:
-                    df.at[n, d] = '休'
-                    work_count_per_day[d] -= 1
-                    rest_totals[n] += 1
-                    break
-            else:
-                break  # break if no suitable day found
+                    # 残りスコアに応じて「休」または半休を割り当て
+                    remaining = TARGET_REST_SCORE - rest_totals[n]
+                    if remaining >= 1:
+                        df.at[n, d] = '休'
+                        rest_totals[n] += 1
+                        work_count_per_day[d] -= 1
+                        inserted = True
+                        break
+                    elif remaining >= 0.5:
+                        df.at[n, d] = '休/'  # 半休として割り当て
+                        rest_totals[n] += 0.5
+                        work_count_per_day[d] -= 1
+                        inserted = True
+                        break
+            if not inserted:
+                break
 
 
 # シフトカウント初期化（平日用）
