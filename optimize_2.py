@@ -129,6 +129,55 @@ def balance_rest_days():
         if not moved:
             break
 
+
+def ensure_min_rest_days_balanced():
+# 1. 各看護師の現在の休日日数
+    rest_totals = {}
+    for n in nurse_names:
+        total = 0
+        for d in date_cols:
+            shift = df.at[n, d]
+            if shift in FULL_OFF_SHIFTS:
+                total += 1
+            elif shift in HALF_OFF_SHIFTS:
+                total += 0.5
+        rest_totals[n] = total
+
+    # 2. 各日付の出勤者数を数える（休みでない人数）
+    work_count_per_day = {}
+    for d in date_cols:
+        count = 0
+        for n in nurse_names:
+            shift = df.at[n, d]
+            if shift not in FULL_OFF_SHIFTS + HALF_OFF_SHIFTS:
+                count += 1
+        work_count_per_day[d] = count
+
+    # 3. 出勤余裕がある日から順に並べる（日別に休み入れやすい順）
+    sorted_days = sorted(date_cols, key=lambda d: work_count_per_day[d], reverse=True)
+
+    # 4. 看護師ごとに、必要休み数を満たすよう「休」を割り当てる（厳格版）
+    for n in nurse_names:
+        while rest_totals[n] < TARGET_REST_SCORE:
+            for d in sorted_days:
+                if fixed_mask.at[n, d]:
+                    continue
+                shift = df.at[n, d]
+                if shift in FULL_OFF_SHIFTS + HALF_OFF_SHIFTS:
+                    continue
+                if shift != '' and not pd.isna(shift):
+                    continue  # Avoid overwriting assigned shifts
+                if shift == '×' and date_cols.index(d) > 0 and df.at[n, date_cols[date_cols.index(d)-1]] == '夜':
+                    continue
+                if work_count_per_day[d] > 7:
+                    df.at[n, d] = '休'
+                    work_count_per_day[d] -= 1
+                    rest_totals[n] += 1
+                    break
+            else:
+                break  # break if no suitable day found
+
+
 # シフトカウント初期化（平日用）
 shift_names_weekday = ['1', '2', '3', '4', '早', '残', '〇', 'CT', '2・CT']
 shift_counts_weekday = {n: {s: 0 for s in shift_names_weekday} for n in nurse_names}
@@ -488,7 +537,7 @@ def prevent_seven_day_streaks():
 
 prevent_seven_day_streaks()
 
-
+ensure_min_rest_days_balanced()
 
  # 出力前に 1〜4 を整数に変換（Excelで数値認識させるため）
 for d in date_cols:
