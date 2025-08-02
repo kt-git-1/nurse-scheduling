@@ -548,9 +548,61 @@ def prevent_seven_day_streaks():
                     streak = 0
 
 
-prevent_seven_day_streaks()
+def prevent_four_day_rest_streaks():
+    """
+    休みが4日連続した場合、固定されていない休みを他の勤務日と入れ替えて休みを分散させる。
+    入れ替え候補が見つからなければ、何も変更せずそのままにする。
+    """
+    off_codes = FULL_OFF_SHIFTS + HALF_OFF_SHIFTS
+    for n in nurse_names:
+        streak = 0
+        for i, col in enumerate(date_cols):
+            shift = df.at[n, col]
+            if shift in off_codes:
+                streak += 1
+                if streak >= 4:
+                    swapped = False
+                    # 直近4日の休みのうち、固定されていない休みを探す
+                    for j in range(i, i - 4, -1):
+                        col_j = date_cols[j]
+                        shift_j = df.at[n, col_j]
+                        if fixed_mask.at[n, col_j] or shift_j not in off_codes:
+                            continue
+                        # 連続休み期間以外から勤務日を探して入れ替える
+                        for k, col_k in enumerate(date_cols):
+                            if i - 3 <= k <= i:
+                                continue  # 連続休みの範囲は除外
+                            shift_k = df.at[n, col_k]
+                            if fixed_mask.at[n, col_k]:
+                                continue
+                            if shift_k in off_codes:
+                                continue
+                            if shift_k == '夜':
+                                continue
+                            if shift_k == '×' and k > 0 and df.at[n, date_cols[k-1]] == '夜':
+                                continue
+                            # 入れ替え実行
+                            df.at[n, col_j], df.at[n, col_k] = df.at[n, col_k], df.at[n, col_j]
+                            swapped = True
+                            streak = 0
+                            break
+                        if swapped:
+                            break
+                    # 入れ替え候補が見つからない場合は、何も変更せずそのままにする
+                    if not swapped:
+                        streak = 0  # 連続カウントだけリセットして次へ
+            else:
+                # 勤務日なら連続休みカウントをリセット
+                streak = 0
 
+
+# 7日連続勤務を防止
+prevent_seven_day_streaks()
+# 4日連続休みを防止
+prevent_four_day_rest_streaks()
+# 休み数を均等化
 ensure_min_rest_days_balanced()
+
 
  # 出力前に 1〜4 を整数に変換（Excelで数値認識させるため）
 for d in date_cols:
