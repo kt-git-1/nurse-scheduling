@@ -3,7 +3,7 @@ import pandas as pd
 import calendar
 from datetime import datetime, timedelta
 from config import (
-    TEMP_SHIFT_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, HOLIDAY_MAP, INPUT_CSV, NURSES, HOLIDAY_NO_WORKERS
+    TEMP_SHIFT_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, HOLIDAY_MAP, INPUT_CSV, NURSES, HOLIDAY_NO_WORKERS, is_japanese_holiday
 )
 
 start_date = datetime(YEAR, MONTH - 1, 21)
@@ -22,9 +22,14 @@ for n in NURSES:
 # 休日フラグを作成（木曜・日曜はfull、土曜はhalf）
 holiday_flags = []
 for d in dates:
-    if d.weekday() == 3 or d.weekday() == 6:
+    if is_japanese_holiday(d):
+        # 祝日は木曜・日曜扱い（full）
+        holiday_flags.append('full')
+    elif d.weekday() == 3 or d.weekday() == 6:
+        # 木曜または日曜
         holiday_flags.append('full')
     elif d.weekday() == 5:
+        # 土曜
         holiday_flags.append('half')
     else:
         holiday_flags.append('none')
@@ -99,7 +104,7 @@ night_counts = [model.NewIntVar(base, base + (1 if i < rem else 0), f'{n}_night_
 for i, n in enumerate(YAKIN_WORKERS):
     model.Add(night_counts[i] == sum(x[n, d, '夜'] for d in range(DAYS_IN_MONTH)))
 
-# 夜勤の翌日は必ず「×」
+# Strict4: 夜勤の翌日は必ず「×」
 for n in YAKIN_WORKERS:
     for d in range(DAYS_IN_MONTH - 1):
         model.Add(x[n, d + 1, '×'] == x[n, d, '夜'])

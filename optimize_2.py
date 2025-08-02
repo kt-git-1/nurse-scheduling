@@ -4,7 +4,7 @@ import random
 import calendar
 from datetime import datetime, timedelta
 from config import (
-    TEMP_SHIFT_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, NURSES, FULL_OFF_SHIFTS, HALF_OFF_SHIFTS, TARGET_REST_SCORE
+    TEMP_SHIFT_PATH, YEAR, MONTH, DAYS_IN_MONTH, SHIFT_TYPES, NURSES, FULL_OFF_SHIFTS, HALF_OFF_SHIFTS, TARGET_REST_SCORE, is_japanese_holiday
 )
 
 # 夜勤を行うメンバー（夜勤明けは必ず×とする）
@@ -206,7 +206,7 @@ for d, col in enumerate(date_cols):
     busy_shifts = ['休', '休/', '/休', '夜', '×']
 
     # 2. 平日（月・火・水・金）の処理
-    if weekday in ['Monday', 'Tuesday', 'Wednesday', 'Friday']:
+    if weekday in ['Monday', 'Tuesday', 'Wednesday', 'Friday'] and not is_japanese_holiday(dates[d]):
         assigned_nurses = set()
         available_nurses = [n for n in nurse_names if df.at[n, col] not in busy_shifts and not fixed_mask.at[n, col]]
 
@@ -338,7 +338,7 @@ for d, col in enumerate(date_cols):
         assign_rest_shifts(remain_nurses, col)
 
     # 3. 木曜・日曜（B日程）の処理
-    elif weekday in ['Thursday', 'Sunday']:
+    elif weekday in ['Thursday', 'Sunday'] or is_japanese_holiday(dates[d]):
         forbidden_shifts = ['休', '休/', '/休', '×', '夜', '/訪']
         candidates = [
             n
