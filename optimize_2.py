@@ -599,7 +599,7 @@ def prevent_four_day_rest_streaks():
 # 7日連続勤務を防止
 prevent_seven_day_streaks()
 # 4日連続休みを防止
-prevent_four_day_rest_streaks()
+# prevent_four_day_rest_streaks()
 # 休み数を均等化
 ensure_min_rest_days_balanced()
 
